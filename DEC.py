@@ -43,6 +43,7 @@ def autoencoder(dims, act='relu', init='glorot_uniform'):
         h = Dense(dims[i + 1], activation=act, kernel_initializer=init, name='encoder_%d' % i)(h)
 
     # hidden layer
+    print(dims[-1])
     h = Dense(dims[-1], kernel_initializer=init, name='encoder_%d' % (n_stacks - 1))(h)  # hidden layer, features are extracted from here
 
     y = h
@@ -163,11 +164,12 @@ class DEC(object):
                     # print()
                     print(' '*8 + '|==>  acc: %.4f,  nmi: %.4f  <==|'
                           % (metrics.acc(self.y, y_pred), metrics.nmi(self.y, y_pred)))
-
+                    print("entramos con un y ")
             cb.append(PrintACC(x, y))
-
+        
         # begin pretraining
         t0 = time()
+        
         self.autoencoder.fit(x, x, batch_size=batch_size, epochs=epochs, callbacks=cb)
         print('Pretraining time: %ds' % round(time() - t0))
         self.autoencoder.save_weights(save_dir + '/ae_weights.h5')
@@ -201,19 +203,24 @@ class DEC(object):
 
         # Step 1: initialize cluster centers using k-means
         t1 = time()
-        print('Initializing cluster centers with k-means.')
+        print('Initializing cluster centers with k-means:::')
+        print(self.n_clusters)
         kmeans = KMeans(n_clusters=self.n_clusters, n_init=20)
+        print(self.encoder.predict(x).shape)
         y_pred = kmeans.fit_predict(self.encoder.predict(x))
+        print(y_pred[0:20])
+        print('debug begin')
         y_pred_last = np.copy(y_pred)
         self.model.get_layer(name='clustering').set_weights([kmeans.cluster_centers_])
 
         # Step 2: deep clustering
         # logging file
+        print('debug end-1')
         import csv
         logfile = open(save_dir + '/dec_log.csv', 'w')
         logwriter = csv.DictWriter(logfile, fieldnames=['iter', 'acc', 'nmi', 'ari', 'loss'])
         logwriter.writeheader()
-
+        print('debug end--2')
         loss = 0
         index = 0
         index_array = np.arange(x.shape[0])
@@ -221,20 +228,27 @@ class DEC(object):
             if ite % update_interval == 0:
                 q = self.model.predict(x, verbose=0)
                 p = self.target_distribution(q)  # update the auxiliary target distribution p
-
+                print('p',p)
                 # evaluate the clustering performance
                 y_pred = q.argmax(1)
+                print('debuf end---3')
                 if y is not None:
+                    
                     acc = np.round(metrics.acc(y, y_pred), 5)
                     nmi = np.round(metrics.nmi(y, y_pred), 5)
                     ari = np.round(metrics.ari(y, y_pred), 5)
                     loss = np.round(loss, 5)
+                    
                     logdict = dict(iter=ite, acc=acc, nmi=nmi, ari=ari, loss=loss)
                     logwriter.writerow(logdict)
                     print('Iter %d: acc = %.5f, nmi = %.5f, ari = %.5f' % (ite, acc, nmi, ari), ' ; loss=', loss)
 
                 # check stop criterion
+                
                 delta_label = np.sum(y_pred != y_pred_last).astype(np.float32) / y_pred.shape[0]
+                print(delta_label)
+                print('debug end--4')
+                
                 y_pred_last = np.copy(y_pred)
                 if ite > 0 and delta_label < tol:
                     print('delta_label ', delta_label, '< tol ', tol)
@@ -243,12 +257,20 @@ class DEC(object):
                     break
 
             # train on batch
-            # if index == 0:
-            #     np.random.shuffle(index_array)
+            #if index == 0:
+            #    np.random.shuffle(index_array)
+            print('debug end--5')
             idx = index_array[index * batch_size: min((index+1) * batch_size, x.shape[0])]
-            loss = self.model.train_on_batch(x=x[idx], y=p[idx])
+            print(idx)
+            print('p[idx]',p[idx])
+            print('format x', x.shape)
+            print('x[idx]',x.iloc[idx])
+            print('debug end--5.1')
+            loss = self.model.train_on_batch(x=x.iloc[idx], y=p[idx])
+            print('debug end--5.2')
             index = index + 1 if (index + 1) * batch_size <= x.shape[0] else 0
-
+            
+            print(index)
             # save intermediate model
             if ite % save_interval == 0:
                 print('saving model to:', save_dir + '/DEC_model_' + str(ite) + '.h5')
